@@ -30,7 +30,3 @@ func (s *ReceivePackSuite) SetupTest() {
 func (s *ReceivePackSuite) TearDownTest() {
 	s.helper.TearDown()
 }
-
-func (s *ReceivePackSuite) TestAdvertisedReferencesEmpty() {
-	// This test from BaseSuite is flaky, so it's disabled until we figure out a solution.
-}
