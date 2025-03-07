@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	fixtures "github.com/go-git/go-git-fixtures/v4"
@@ -238,6 +240,8 @@ type CommonSuiteHelper struct {
 	base string
 	host string
 	port int
+
+	httpServer *http.Server
 }
 
 func (h *CommonSuiteHelper) Setup(t *testing.T) {
@@ -255,19 +259,21 @@ func (h *CommonSuiteHelper) Setup(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	assert.NoError(t, err)
 
-	server := &http.Server{
+	h.httpServer = &http.Server{
 		Handler: &cgi.Handler{
 			Path: filepath.Join(strings.Trim(string(out), "\n"), "git-http-backend"),
 			Env:  []string{"GIT_HTTP_EXPORT_ALL=true", fmt.Sprintf("GIT_PROJECT_ROOT=%s", h.base)},
 		},
 	}
 	go func() {
-		log.Fatal(server.Serve(l))
+		if err := h.httpServer.Serve(l); err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
 	}()
 }
 
-func (h *CommonSuiteHelper) TearDown() {
-
+func (h *CommonSuiteHelper) TearDown(t *testing.T) {
+	require.NoError(t, h.httpServer.Shutdown(context.Background()))
 }
 
 func (h *CommonSuiteHelper) prepareRepository(t *testing.T, f *fixtures.Fixture, name string) *transport.Endpoint {
