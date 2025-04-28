@@ -1358,6 +1358,24 @@ func (s *WorktreeSuite) TestResetSparsely() {
 	s.Equal("crappy.php", files[0].Name())
 }
 
+func (s *WorktreeSuite) TestResetSparselyInvalidDir() {
+	fs := memfs.New()
+	w := &Worktree{
+		r:          s.Repository,
+		Filesystem: fs,
+	}
+
+	testcases := [][]string{
+		{"non-existent"},
+		{"php/crappy.php"}, // non-dir
+	}
+
+	for _, dirs := range testcases {
+		err := w.ResetSparsely(&ResetOptions{Mode: HardReset}, dirs)
+		s.Require().ErrorIs(err, ErrSparseResetDirectoryNotFound)
+	}
+}
+
 func (s *WorktreeSuite) TestStatusAfterCheckout() {
 	fs := memfs.New()
 	w := &Worktree{

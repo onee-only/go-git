@@ -296,16 +296,22 @@ func (w *Worktree) ResetSparsely(opts *ResetOptions, dirs []string) error {
 		}
 	}
 
-	if err := w.setHEADCommit(opts.Commit); err != nil {
-		return err
-	}
-
 	if opts.Mode == SoftReset {
-		return nil
+		return w.setHEADCommit(opts.Commit)
 	}
 
 	t, err := w.r.getTreeFromCommitHash(opts.Commit)
 	if err != nil {
+		return err
+	}
+
+	if len(dirs) > 0 {
+		if !treeContainsDirs(t, dirs) {
+			return ErrSparseResetDirectoryNotFound
+		}
+	}
+
+	if err := w.setHEADCommit(opts.Commit); err != nil {
 		return err
 	}
 
@@ -322,6 +328,20 @@ func (w *Worktree) ResetSparsely(opts *ResetOptions, dirs []string) error {
 	}
 
 	return nil
+}
+
+func treeContainsDirs(tree *object.Tree, dirs []string) bool {
+	for _, dir := range dirs {
+		entry, err := tree.FindEntry(dir)
+		if err != nil {
+			return false
+		}
+		if entry.Mode != filemode.Dir {
+			return false
+		}
+	}
+
+	return true
 }
 
 // Restore restores specified files in the working tree or stage with contents from
