@@ -1344,7 +1344,7 @@ func (s *WorktreeSuite) TestResetSparsely() {
 
 	sparseResetDirs := []string{"php"}
 
-	err := w.ResetSparsely(&ResetOptions{Mode: HardReset}, sparseResetDirs)
+	err := w.Reset(&ResetOptions{Mode: HardReset, SparseDirs: sparseResetDirs})
 	s.NoError(err)
 
 	files, err := fs.ReadDir("/")
@@ -1371,7 +1371,7 @@ func (s *WorktreeSuite) TestResetSparselyInvalidDir() {
 	}
 
 	for _, dirs := range testcases {
-		err := w.ResetSparsely(&ResetOptions{Mode: HardReset}, dirs)
+		err := w.Reset(&ResetOptions{Mode: HardReset, SparseDirs: dirs})
 		s.Require().ErrorIs(err, ErrSparseResetDirectoryNotFound)
 	}
 }
