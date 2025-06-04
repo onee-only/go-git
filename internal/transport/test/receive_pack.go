@@ -374,7 +374,7 @@ func (s *ReceivePackSuite) testSendPackAddReference() {
 	// 	req.Capabilities.Set(capability.ReportStatus)
 	// }
 
-	s.receivePack(s.Endpoint, req, nil, false)
+	s.receivePack(s.Endpoint, req, fixture, false)
 	s.checkRemoteReference(s.Endpoint, "refs/heads/newbranch", plumbing.NewHash(fixture.Head))
 }
 
@@ -408,7 +408,7 @@ func (s *ReceivePackSuite) testSendPackDeleteReference() {
 		s.Fail("capability delete-refs not supported")
 	}
 
-	s.receivePack(s.Endpoint, req, nil, false)
+	s.receivePack(s.Endpoint, req, fixture, false)
 	s.checkRemoteReference(s.Endpoint, "refs/heads/newbranch", plumbing.ZeroHash)
 }
 
