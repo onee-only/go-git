@@ -262,7 +262,9 @@ func (p *Packfile) Close() error {
 	p.m.Lock()
 	defer p.m.Unlock()
 
-	gogitsync.PutBufioReader(p.rbuf)
+	if p.rbuf != nil {
+		gogitsync.PutBufioReader(p.rbuf)
+	}
 
 	closer, ok := p.file.(io.Closer)
 	if !ok {
