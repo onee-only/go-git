@@ -32,7 +32,7 @@ func FuzzOpenFileIndex(f *testing.F) {
 		buf.WriteByte(0)        // base graphs
 		offset := uint64(8 + len(entries)*12)
 		for _, c := range entries {
-			buf.Write(c.Signature())
+			buf.Write(c.SignatureBytes())
 			_ = binary.WriteUint64(&buf, offset)
 			offset += 16
 		}

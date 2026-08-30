@@ -145,13 +145,17 @@ func (fi *fileIndex) verifyFileHeader() error {
 		return err
 	}
 	if header[0] != 1 {
+		// Currently there is only one version.
 		return ErrUnsupportedVersion
 	}
-	if (fi.objSize != crypto.SHA1.Size() || header[1] != 1) &&
-		(fi.objSize != crypto.SHA256.Size() || header[1] != 2) {
+	switch {
+	case fi.objSize == crypto.SHA1.Size() && header[1] == 1:
+	case fi.objSize == crypto.SHA256.Size() && header[1] == 2:
+	default:
 		// Unknown hash type / unsupported hash type
 		return ErrUnsupportedHash
 	}
+
 	fi.numChunks = header[2]
 
 	return nil
@@ -219,9 +223,9 @@ type chunkAssignment struct {
 // [1]: https://github.com/git/git/blob/v2.54.0/commit-graph.c#L414
 // [2]: https://github.com/git/git/blob/v2.54.0/chunk-format.c#L117
 func (fi *fileIndex) readChunkHeaders() error {
-	tocBase := int64(szSignature + szHeader)
+	const tocBase = int64(szSignature + szHeader)
 	const tocEntrySize = szChunkSig + szUint64
-	chunkID := make([]byte, szChunkSig) // reused across loop iterations
+	var chunkID [szChunkSig]byte // reused across loop iterations
 	var prevOffset int64
 
 	// Canonical Git's read_table_of_contents [2] validates each chunk's
@@ -246,9 +250,9 @@ func (fi *fileIndex) readChunkHeaders() error {
 	// fi.sizes from consecutive offset differences.
 	assigned := make([]chunkAssignment, 0, int(fi.numChunks))
 
-	for i := range int(fi.numChunks) {
-		entry := io.NewSectionReader(fi.reader, tocBase+int64(i)*tocEntrySize, tocEntrySize)
-		if _, err := io.ReadAtLeast(entry, chunkID, szChunkSig); err != nil {
+	for i := range int64(fi.numChunks) {
+		entry := io.NewSectionReader(fi.reader, tocBase+(i*tocEntrySize), tocEntrySize)
+		if _, err := io.ReadFull(entry, chunkID[:]); err != nil {
 			return err
 		}
 		chunkOffset, err := binary.ReadUint64(entry)
@@ -267,15 +271,14 @@ func (fi *fileIndex) readChunkHeaders() error {
 
 		// Reject duplicate chunk-ids (known and unknown alike), matching
 		// canonical Git's "duplicate chunk ID" check [2].
-		var id [szChunkSig]byte
-		copy(id[:], chunkID)
-		if _, ok := seen[id]; ok {
+		if _, ok := seen[chunkID]; ok {
 			return ErrMalformedCommitGraphFile
 		}
-		seen[id] = struct{}{}
+		seen[chunkID] = struct{}{}
 
-		chunkType, ok := ChunkTypeFromBytes(chunkID)
+		chunkType, ok := ChunkTypeFromSig(chunkID)
 		if !ok {
+			// It should be unknown chunk.
 			continue
 		}
 		// A zero chunk-id inside the declared count is the same condition
@@ -285,6 +288,7 @@ func (fi *fileIndex) readChunkHeaders() error {
 			return ErrMalformedCommitGraphFile
 		}
 		if int(chunkType) >= len(fi.offsets) {
+			// It should be unknown chunk.
 			continue
 		}
 		fi.offsets[chunkType] = int64(chunkOffset)
@@ -295,10 +299,10 @@ func (fi *fileIndex) readChunkHeaders() error {
 	// is zero. Reading anything else means the declared count does not
 	// match the table contents.
 	terminator := io.NewSectionReader(fi.reader, tocBase+int64(fi.numChunks)*tocEntrySize, tocEntrySize)
-	if _, err := io.ReadAtLeast(terminator, chunkID, szChunkSig); err != nil {
+	if _, err := io.ReadFull(terminator, chunkID[:]); err != nil {
 		return err
 	}
-	if !bytes.Equal(chunkID, ZeroChunk.Signature()) {
+	if chunkID != ZeroChunk.Signature() {
 		return ErrMalformedCommitGraphFile
 	}
 	// The terminator entry's offset marks the end of all chunk data. Use it
@@ -372,7 +376,7 @@ func (fi *fileIndex) readFanout() error {
 	// The Fanout table is a 256 entry table of the number (as uint32) of OIDs with first byte at most i.
 	// Thus F[255] stores the total number of commits (N)
 	fanoutReader := io.NewSectionReader(fi.reader, fi.offsets[OIDFanoutChunk], lenFanout*szUint32)
-	for i := range 256 {
+	for i := range lenFanout {
 		fanoutValue, err := binary.ReadUint32(fanoutReader)
 		if err != nil {
 			return err

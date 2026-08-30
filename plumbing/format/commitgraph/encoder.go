@@ -36,17 +36,25 @@ func (e *Encoder) Encode(idx Index) error {
 		return err
 	}
 
-	chunkSignatures := [][]byte{OIDFanoutChunk.Signature(), OIDLookupChunk.Signature(), CommitDataChunk.Signature()}
-	chunkSizes := []uint64{szUint32 * lenFanout, uint64(len(hashes) * e.hash.Size()), uint64(len(hashes) * (e.hash.Size() + szCommitData))}
+	chunkSignatures := [][]byte{
+		OIDFanoutChunk.SignatureBytes(),
+		OIDLookupChunk.SignatureBytes(),
+		CommitDataChunk.SignatureBytes(),
+	}
+	chunkSizes := []uint64{
+		szUint32 * lenFanout,
+		uint64(len(hashes) * e.hash.Size()),
+		uint64(len(hashes) * (e.hash.Size() + szCommitData)),
+	}
 	if extraEdgesCount > 0 {
-		chunkSignatures = append(chunkSignatures, ExtraEdgeListChunk.Signature())
+		chunkSignatures = append(chunkSignatures, ExtraEdgeListChunk.SignatureBytes())
 		chunkSizes = append(chunkSizes, uint64(extraEdgesCount)*szUint32)
 	}
 	if idx.HasGenerationV2() {
-		chunkSignatures = append(chunkSignatures, GenerationDataChunk.Signature())
+		chunkSignatures = append(chunkSignatures, GenerationDataChunk.SignatureBytes())
 		chunkSizes = append(chunkSizes, uint64(len(hashes))*szUint32)
 		if generationV2OverflowCount > 0 {
-			chunkSignatures = append(chunkSignatures, GenerationDataOverflowChunk.Signature())
+			chunkSignatures = append(chunkSignatures, GenerationDataOverflowChunk.SignatureBytes())
 			chunkSizes = append(chunkSizes, uint64(generationV2OverflowCount)*szUint64)
 		}
 	}
@@ -158,7 +166,7 @@ func (e *Encoder) encodeChunkHeaders(chunkSignatures [][]byte, chunkSizes []uint
 		}
 		offset += chunkSizes[i]
 	}
-	if _, err = e.Write(ZeroChunk.Signature()); err == nil {
+	if _, err = e.Write(ZeroChunk.SignatureBytes()); err == nil {
 		err = binary.WriteUint64(e, offset)
 	}
 	return err

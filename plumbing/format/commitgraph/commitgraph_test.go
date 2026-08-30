@@ -222,7 +222,7 @@ func (s *CommitgraphSuite) TestOpenFileIndexRejectsChunkCountMismatch() {
 	buf.WriteByte(0)        // base graphs
 	offset := uint64(8 + len(chunks)*12)
 	for _, c := range chunks {
-		buf.Write(c.Signature())
+		buf.Write(c.SignatureBytes())
 		s.Require().NoError(binary.WriteUint64(&buf, offset))
 		offset += 16
 	}
@@ -258,10 +258,10 @@ func (s *CommitgraphSuite) TestOpenFileIndexRejectsTruncatedFile() {
 		commitgraph.OIDLookupChunk,
 		commitgraph.CommitDataChunk,
 	} {
-		buf.Write(c.Signature())
+		buf.Write(c.SignatureBytes())
 		s.Require().NoError(binary.WriteUint64(&buf, uint64(8+4*12)))
 	}
-	buf.Write(commitgraph.ZeroChunk.Signature())
+	buf.Write(commitgraph.ZeroChunk.SignatureBytes())
 	s.Require().NoError(binary.WriteUint64(&buf, uint64(8+4*12)))
 
 	_, err := openIndexBytes(buf.Bytes())
@@ -288,19 +288,19 @@ func (s *CommitgraphSuite) TestOpenFileIndexRejectsChunkOffsetPastEOF() {
 
 	// OIDFanout at a valid offset right after the toc.
 	validOffset := uint64(8 + 4*12)
-	buf.Write(commitgraph.OIDFanoutChunk.Signature())
+	buf.Write(commitgraph.OIDFanoutChunk.SignatureBytes())
 	s.Require().NoError(binary.WriteUint64(&buf, validOffset))
 	// OIDLookup offset is past EOF (> fileSize - hash_size = 1080).
-	buf.Write(commitgraph.OIDLookupChunk.Signature())
+	buf.Write(commitgraph.OIDLookupChunk.SignatureBytes())
 	s.Require().NoError(binary.WriteUint64(&buf, uint64(fileSize+1024)))
 	// CommitData at a valid offset; without it, the post-loop
 	// mandatory-chunk check would reject the file regardless of the
 	// new offset validation, so this test would not be attributable
 	// to the offset-past-EOF guard.
-	buf.Write(commitgraph.CommitDataChunk.Signature())
+	buf.Write(commitgraph.CommitDataChunk.SignatureBytes())
 	s.Require().NoError(binary.WriteUint64(&buf, validOffset+1024))
 	// Zero terminator.
-	buf.Write(commitgraph.ZeroChunk.Signature())
+	buf.Write(commitgraph.ZeroChunk.SignatureBytes())
 	s.Require().NoError(binary.WriteUint64(&buf, uint64(fileSize)))
 
 	// Pad to declared file size so verifyFileSize passes.
@@ -349,15 +349,15 @@ func (s *CommitgraphSuite) TestOpenFileIndexRejectsDuplicateChunkID() {
 	dupOffset := oidlOffset // monotonic; same as cdat
 	termOffset := uint64(fileSize - 20)
 
-	buf.Write(commitgraph.OIDFanoutChunk.Signature())
+	buf.Write(commitgraph.OIDFanoutChunk.SignatureBytes())
 	s.Require().NoError(binary.WriteUint64(&buf, oidfOffset))
-	buf.Write(commitgraph.OIDLookupChunk.Signature())
+	buf.Write(commitgraph.OIDLookupChunk.SignatureBytes())
 	s.Require().NoError(binary.WriteUint64(&buf, oidlOffset))
-	buf.Write(commitgraph.CommitDataChunk.Signature())
+	buf.Write(commitgraph.CommitDataChunk.SignatureBytes())
 	s.Require().NoError(binary.WriteUint64(&buf, cdatOffset))
-	buf.Write(commitgraph.OIDFanoutChunk.Signature()) // duplicate
+	buf.Write(commitgraph.OIDFanoutChunk.SignatureBytes()) // duplicate
 	s.Require().NoError(binary.WriteUint64(&buf, dupOffset))
-	buf.Write(commitgraph.ZeroChunk.Signature())
+	buf.Write(commitgraph.ZeroChunk.SignatureBytes())
 	s.Require().NoError(binary.WriteUint64(&buf, termOffset))
 
 	// Pad to declared file size so verifyFileSize passes.
@@ -379,7 +379,7 @@ func (s *CommitgraphSuite) TestOpenFileIndexRejectsZeroChunkCount() {
 	buf.WriteByte(0) // num_chunks
 	buf.WriteByte(0)
 	const fileSize = 8 + 12 + 1024 + 20
-	buf.Write(commitgraph.ZeroChunk.Signature())
+	buf.Write(commitgraph.ZeroChunk.SignatureBytes())
 	s.Require().NoError(binary.WriteUint64(&buf, fileSize))
 
 	buf.Write(make([]byte, fileSize-buf.Len()))
@@ -401,14 +401,14 @@ func (s *CommitgraphSuite) TestOpenFileIndexRejectsEarlyZeroChunk() {
 	buf.WriteByte(2)
 	buf.WriteByte(0)
 
-	buf.Write(commitgraph.OIDFanoutChunk.Signature())
+	buf.Write(commitgraph.OIDFanoutChunk.SignatureBytes())
 	s.Require().NoError(binary.WriteUint64(&buf, 8+3*12))
 	// Early ZeroChunk inside the declared count. Its offset is strictly
 	// greater than the previous one so the monotonicity guard cannot
 	// fire; only the in-loop ZeroChunk guard can produce the rejection.
-	buf.Write(commitgraph.ZeroChunk.Signature())
+	buf.Write(commitgraph.ZeroChunk.SignatureBytes())
 	s.Require().NoError(binary.WriteUint64(&buf, 8+3*12+1))
-	buf.Write(commitgraph.ZeroChunk.Signature())
+	buf.Write(commitgraph.ZeroChunk.SignatureBytes())
 	s.Require().NoError(binary.WriteUint64(&buf, fileSize))
 
 	buf.Write(make([]byte, fileSize-buf.Len()))
