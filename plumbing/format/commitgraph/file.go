@@ -53,24 +53,6 @@ const (
 	lenFanout = 256
 )
 
-type sizer interface {
-	Size() int64
-}
-
-// readerSize returns the byte length reachable from r. It honours bytes.Reader
-// (Size()) and any io.Seeker (Seek to SeekEnd). When neither is available
-// the size is reported as 0 with a non-nil error so callers can decide
-// whether to skip the size-dependent checks.
-func readerSize(r io.ReaderAt) (int64, error) {
-	if s, ok := r.(sizer); ok {
-		return s.Size(), nil
-	}
-	if s, ok := r.(io.Seeker); ok {
-		return s.Seek(0, io.SeekEnd)
-	}
-	return 0, errors.New("commitgraph: cannot determine reader size")
-}
-
 type fileIndex struct {
 	reader                ReaderAtCloser
 	fanout                [lenFanout]uint32
@@ -181,21 +163,26 @@ func (fi *fileIndex) verifyFileHeader() error {
 // contents (including the zero terminator), the fanout table, and
 // the trailing hash trailer.
 //
-// If the reader satisfies neither sizer nor io.Seeker the size is
+// If the reader does not satisfiy io.Seeker the size is
 // left at zero and the precheck is skipped; the per-chunk reads in
 // readChunkHeaders still detect truncation reactively.
 //
 // [1]: https://github.com/git/git/blob/v2.54.0/commit-graph.c#L419
 func (fi *fileIndex) verifyFileSize() error {
-	size, err := readerSize(fi.reader)
-	if err != nil {
+	seeker, ok := fi.reader.(io.Seeker)
+	if !ok {
 		// Without a size we fall back on per-chunk reads to detect
 		// truncation. The reader interface only requires io.ReaderAt
 		// and io.Closer, so this branch is taken by exotic callers
-		// only; the in-tree filesystem and in-memory paths both
-		// satisfy sizer or io.Seeker.
+		// only.
 		return nil
 	}
+
+	size, err := seeker.Seek(0, io.SeekEnd)
+	if err != nil {
+		return err
+	}
+
 	fi.fileSize = size
 
 	minSize := int64(szSignature+szHeader) +
