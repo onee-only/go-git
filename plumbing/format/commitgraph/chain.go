@@ -10,6 +10,13 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
+type ChainAccess interface {
+	// Hashes returns graph hashes in the chain.
+	Hashes() ([]plumbing.ObjectID, error)
+	// OpenIndex opens the commit-graph file with given id. callers MUST close the index.
+	OpenIndex(id plumbing.ObjectID) (Index, error)
+}
+
 // OpenChainFile reads a commit chain file and returns a slice of the hashes within it
 //
 // Commit-Graph chains are described at https://git-scm.com/docs/commit-graph

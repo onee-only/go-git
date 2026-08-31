@@ -31,7 +31,7 @@ func (e *Encoder) Encode(idx Index) error {
 	hashes := idx.Hashes()
 
 	// Sort the input and prepare helper structures we'll need for encoding
-	hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount, err := e.prepare(idx, hashes)
+	hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount, parentIndexes, err := e.prepare(idx, hashes)
 	if err != nil {
 		return err
 	}
@@ -57,6 +57,11 @@ func (e *Encoder) Encode(idx Index) error {
 			chunkSignatures = append(chunkSignatures, GenerationDataOverflowChunk.SignatureBytes())
 			chunkSizes = append(chunkSizes, uint64(generationV2OverflowCount)*szUint64)
 		}
+	}
+	if len(parentIndexes) > 0 {
+		chunkSignatures = append(chunkSignatures, BaseGraphsListChunk.SignatureBytes())
+		// TODO: Support passing an ObjectFormat (sha256)
+		chunkSizes = append(chunkSizes, uint64(len(chunkSignatures))*uint64(crypto.SHA1.Size()))
 	}
 
 	if err := e.encodeFileHeader(len(chunkSignatures)); err != nil {
@@ -89,6 +94,10 @@ func (e *Encoder) Encode(idx Index) error {
 		}
 	}
 
+	if err = e.encodeBase(parentIndexes); err != nil {
+		return err
+	}
+
 	return e.encodeChecksum()
 }
 
@@ -104,7 +113,13 @@ func lookupParentIndex(hashToIndex map[plumbing.Hash]uint32, h plumbing.Hash) (u
 	return i, nil
 }
 
-func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[plumbing.Hash]uint32, fanout []uint32, extraEdgesCount, generationV2OverflowCount uint32, err error) {
+func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (
+	hashToIndex map[plumbing.Hash]uint32,
+	fanout []uint32,
+	extraEdgesCount, generationV2OverflowCount uint32,
+	parentIndexes []plumbing.ObjectID,
+	err error,
+) {
 	// Sort the hashes and build our index
 	plumbing.HashesSort(hashes)
 	hashToIndex = make(map[plumbing.Hash]uint32)
@@ -127,7 +142,7 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 	for i := range len(hashes) {
 		v, err := idx.GetCommitDataByIndex(uint32(i))
 		if err != nil {
-			return nil, nil, 0, 0, err
+			return nil, nil, 0, 0, nil, err
 		}
 		if len(v.ParentHashes) > 2 {
 			extraEdgesCount += uint32(len(v.ParentHashes) - 1)
@@ -137,7 +152,12 @@ func (e *Encoder) prepare(idx Index, hashes []plumbing.Hash) (hashToIndex map[pl
 		}
 	}
 
-	return hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount, nil
+	parentHashes, err := idx.Parents()
+	if err != nil {
+		return nil, nil, 0, 0, nil, err
+	}
+
+	return hashToIndex, fanout, extraEdgesCount, generationV2OverflowCount, parentHashes, nil
 }
 
 func (e *Encoder) encodeFileHeader(chunkCount int) (err error) {
@@ -266,7 +286,16 @@ func (e *Encoder) encodeExtraEdges(extraEdges []uint32) (err error) {
 			return err
 		}
 	}
-	return err
+	return nil
+}
+
+func (e *Encoder) encodeBase(base []plumbing.ObjectID) (err error) {
+	for _, oid := range base {
+		if _, err := oid.WriteTo(e); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (e *Encoder) encodeGenerationV2Data(generationV2Data []uint64) (overflows []uint64, err error) {

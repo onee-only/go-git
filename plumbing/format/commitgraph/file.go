@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing"
@@ -54,16 +55,21 @@ const (
 )
 
 type fileIndex struct {
-	reader                ReaderAtCloser
+	reader ReaderAtCloser
+
+	checksum              plumbing.ObjectID
 	fanout                [lenFanout]uint32
 	offsets               [lenChunks]int64
 	sizes                 [lenChunks]int64 // byte length of each known chunk
-	parent                Index
 	hasGenerationV2       bool
 	minimumNumberOfHashes uint32
 	objSize               int
 	numChunks             uint8
 	fileSize              int64
+
+	chain     ChainAccess
+	bases     []plumbing.ObjectID
+	baseCache map[plumbing.ObjectID]Index // parent commit graphs
 }
 
 // ReaderAtCloser is an interface that combines io.ReaderAt and io.Closer.
@@ -84,7 +90,7 @@ func OpenFileIndexWithParent(reader ReaderAtCloser, parent Index) (Index, error)
 	if reader == nil {
 		return nil, io.ErrUnexpectedEOF
 	}
-	fi := &fileIndex{reader: reader, parent: parent, objSize: config.SHA1Size}
+	fi := &fileIndex{reader: reader, objSize: config.SHA1Size}
 
 	if err := fi.verifyFileHeader(); err != nil {
 		return nil, err
@@ -109,6 +115,10 @@ func OpenFileIndexWithParent(reader ReaderAtCloser, parent Index) (Index, error)
 
 	if fi.parent != nil {
 		fi.minimumNumberOfHashes = fi.parent.MaximumNumberOfHashes()
+	}
+
+	if err := fi.verifyBase(); err != nil {
+		return nil, err
 	}
 
 	return fi, nil
@@ -388,6 +398,73 @@ func (fi *fileIndex) readFanout() error {
 	}
 	return nil
 }
+
+func (fi *fileIndex) readChecksum() error {
+	lastChunkIdx := 0
+	maxOffset := int64(0)
+
+	for idx, offset := range fi.offsets {
+		if offset > maxOffset {
+			lastChunkIdx = idx
+			maxOffset = offset
+		}
+	}
+
+	checksumStart := maxOffset + fi.sizes[lastChunkIdx]
+	checksumReader := io.NewSectionReader(fi.reader, checksumStart, int64(fi.objSize))
+
+	buf := make([]byte, fi.objSize)
+	if _, err := io.ReadFull(checksumReader, buf); err != nil {
+		return err
+	}
+
+	fi.checksum, _ = plumbing.FromBytes(buf)
+	return nil
+}
+
+func (fi *fileIndex) verifyBase() error {
+	if fi.chain == nil {
+		// There is only one commit-graph file without chain.
+		if fi.sizes[BaseGraphsListChunk] > 0 {
+			return ErrMalformedCommitGraphFile
+		}
+		return nil
+	}
+
+	hashes, err := fi.chain.Hashes()
+	if err != nil {
+		return err
+	}
+
+	idx := slices.Index(hashes, fi.checksum)
+	if idx == -1 {
+		// Hashes doesn't include this file's checksum.
+		return ErrMalformedCommitGraphFile
+	}
+
+	expectedBases := hashes[:idx]
+	if int64(len(expectedBases)) != fi.sizes[BaseGraphsListChunk]/int64(fi.objSize) {
+		return ErrMalformedCommitGraphFile
+	}
+
+	current := make([]byte, fi.objSize)
+	baseReader := io.NewSectionReader(fi.reader, fi.offsets[BaseGraphsListChunk], fi.sizes[BaseGraphsListChunk])
+	for _, oid := range expectedBases {
+		if _, err := io.ReadFull(baseReader, current); err != nil {
+			return err
+		}
+
+		if oid.Compare(current) != 0 {
+			return ErrMalformedCommitGraphFile
+		}
+	}
+
+	fi.bases = expectedBases
+
+	return nil
+}
+
+func (fi *fileIndex) a() {}
 
 // GetIndexByHash looks up the provided hash in the commit-graph fanout and returns the index of the commit data for the given hash.
 func (fi *fileIndex) GetIndexByHash(h plumbing.Hash) (uint32, error) {

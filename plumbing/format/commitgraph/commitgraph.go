@@ -46,12 +46,18 @@ type Index interface {
 	// GetNodeByIndex gets the commit node from the commit graph using index
 	// obtained from child node, if available
 	GetCommitDataByIndex(i uint32) (*CommitData, error)
-	// Hashes returns all the hashes that are available in the index
-	Hashes() []plumbing.Hash
+	// Hashes returns an iterator that iterates through the hashes that are available in the index
+	Hashes() HashIter
 	// HasGenerationV2 returns true if the commit graph has the corrected commit date data
 	HasGenerationV2() bool
 	// MaximumNumberOfHashes returns the maximum number of hashes within the index
 	MaximumNumberOfHashes() uint32
+	// Parents returns all the base commit graph in the chain.
+	Parents() ([]plumbing.ObjectID, error)
 
 	io.Closer
+}
+
+type HashIter interface {
+	Next() (plumbing.Hash, error)
 }
